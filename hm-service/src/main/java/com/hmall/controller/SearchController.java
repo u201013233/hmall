@@ -1,19 +1,16 @@
 package com.hmall.controller;
 
-
-import cn.hutool.core.util.StrUtil;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.hmall.common.domain.PageDTO;
-import com.hmall.domain.dto.ItemDTO;
-import com.hmall.domain.po.Item;
-import com.hmall.domain.query.ItemPageQuery;
-import com.hmall.service.IItemService;
+import com.hmall.api.client.ItemClient;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Api(tags = "搜索相关接口")
 @RestController
@@ -21,20 +18,29 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class SearchController {
 
-    private final IItemService itemService;
+    private final ItemClient itemClient;
 
     @ApiOperation("搜索商品")
     @GetMapping("/list")
-    public PageDTO<ItemDTO> search(ItemPageQuery query) {
-        // 分页查询
-        Page<Item> result = itemService.lambdaQuery()
-                .like(StrUtil.isNotBlank(query.getKey()), Item::getName, query.getKey())
-                .eq(StrUtil.isNotBlank(query.getBrand()), Item::getBrand, query.getBrand())
-                .eq(StrUtil.isNotBlank(query.getCategory()), Item::getCategory, query.getCategory())
-                .eq(Item::getStatus, 1)
-                .between(query.getMaxPrice() != null, Item::getPrice, query.getMinPrice(), query.getMaxPrice())
-                .page(query.toMpPage("update_time", false));
-        // 封装并返回
-        return PageDTO.of(result, ItemDTO.class);
+    public Map<String, Object> search(@RequestParam(value = "key", required = false) String key,
+                                      @RequestParam(value = "category", required = false) String category,
+                                      @RequestParam(value = "brand", required = false) String brand,
+                                      @RequestParam(value = "minPrice", required = false) Integer minPrice,
+                                      @RequestParam(value = "maxPrice", required = false) Integer maxPrice,
+                                      @RequestParam(value = "pageNo", defaultValue = "1") Integer pageNo,
+                                      @RequestParam(value = "pageSize", defaultValue = "20") Integer pageSize,
+                                      @RequestParam(value = "sortBy", required = false) String sortBy,
+                                      @RequestParam(value = "isAsc", defaultValue = "false") Boolean isAsc) {
+        Map<String, Object> query = new HashMap<>();
+        query.put("key", key);
+        query.put("category", category);
+        query.put("brand", brand);
+        query.put("minPrice", minPrice);
+        query.put("maxPrice", maxPrice);
+        query.put("pageNo", pageNo);
+        query.put("pageSize", pageSize);
+        query.put("sortBy", sortBy);
+        query.put("isAsc", isAsc);
+        return itemClient.searchItems(query);
     }
 }
