@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.math.BigInteger;
+import java.util.TimeZone;
 
 @Configuration
 @ConditionalOnClass(ObjectMapper.class)
@@ -18,6 +19,8 @@ public class JsonConfig {
             // long -> string
             jacksonObjectMapperBuilder.serializerByType(Long.class, ToStringSerializer.instance);
             jacksonObjectMapperBuilder.serializerByType(BigInteger.class, ToStringSerializer.instance);
+            // 时区设置为东八区
+            jacksonObjectMapperBuilder.timeZone(TimeZone.getTimeZone("Asia/Shanghai"));
         };
     }
 }
