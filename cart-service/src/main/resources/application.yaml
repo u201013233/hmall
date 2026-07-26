@@ -44,13 +44,4 @@ knife4j:
           - com.hmall.cart.controller
 feign:
   okhttp:
-    enabled: true # 开启OKHttp功能
-hm:
-  jwt:
-    location: classpath:hmall.jks
-    alias: hmall
-    password: hmall123
-    tokenTTL: 30m
-  auth:
-    excludePaths:
-      - /carts/**
+    enabled: true

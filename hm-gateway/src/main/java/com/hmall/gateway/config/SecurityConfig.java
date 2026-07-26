@@ -1,4 +1,4 @@
-package com.hmall.cart.config;
+package com.hmall.gateway.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
