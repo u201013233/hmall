@@ -89,7 +89,7 @@ public class OrderServiceImpl extends ServiceImpl<OrderMapper, Order> implements
 
     @Override
     public void markOrderPaySuccess(Long orderId) {
-        log.info("收到支付成功通知，开始更新订单状态，订单id：{}", orderId);
+        log.info("收到支付成功通知，开始更新订单状态，订单id：{}，操作人用户id：{}", orderId, UserContext.getUser());
         Order order = new Order();
         order.setId(orderId);
         order.setStatus(2);
