@@ -125,8 +125,8 @@ public class DocumentTest {
     void testLoadItemDocs() throws IOException {
         // 分页查询商品数据
         int pageNo = 1;
-        // 先只导入1条验证流程；需要全量导入时改回1000并去掉下方的return
-        int size = 1;
+        // 每页1000条，循环导入全部商品
+        int size = 1000;
         while (true) {
             Page<Item> page = itemService.lambdaQuery().eq(Item::getStatus, 1).page(new Page<Item>(pageNo, size));
             // 非空校验
@@ -149,10 +149,8 @@ public class DocumentTest {
             // 3.发送请求
             client.bulk(request, RequestOptions.DEFAULT);
 
-            // 只导第一页就结束
-            return;
             // 翻页
-//            pageNo++;
+            pageNo++;
         }
     }
 }
