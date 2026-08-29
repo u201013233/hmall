@@ -55,4 +55,10 @@ public class PayController {
         PayOrder payOrder = payOrderService.queryByBizOrderNo(id);
         return BeanUtils.copyBean(payOrder, PayOrderDTO.class);
     }
+
+    @ApiOperation("根据业务订单id关闭支付单（超时取消）")
+    @PutMapping("/biz/{id}/status/close")
+    public void closePayOrderByBizOrderNo(@PathVariable("id") Long id){
+        payOrderService.closePayOrderByBizOrderNo(id);
+    }
 }

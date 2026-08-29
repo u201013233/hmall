@@ -68,11 +68,11 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrder> i
         }
         // 5.修改订单状态
         // tradeClient.markOrderPaySuccess(po.getBizOrderNo());
-        try {
-            rabbitTemplate.convertAndSend("pay.direct", "pay.success", po.getBizOrderNo());
-        } catch (Exception e) {
-            log.error("支付成功的消息发送失败，支付单id：{}， 交易单id：{}", po.getId(), po.getBizOrderNo(), e);
-        }
+//        try {
+//            rabbitTemplate.convertAndSend("pay.direct", "pay.success", po.getBizOrderNo());
+//        } catch (Exception e) {
+//            log.error("支付成功的消息发送失败，支付单id：{}， 交易单id：{}", po.getId(), po.getBizOrderNo(), e);
+//        }
     }
 
     public boolean markPayOrderSuccess(Long id, LocalDateTime successTime) {
@@ -134,5 +134,16 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrder> i
         return lambdaQuery()
                 .eq(PayOrder::getBizOrderNo, bizOrderNo)
                 .one();
+    }
+
+    @Override
+    public void closePayOrderByBizOrderNo(Long bizOrderNo) {
+        boolean closed = lambdaUpdate()
+                .eq(PayOrder::getBizOrderNo, bizOrderNo)
+                // 只关闭未提交/待支付的支付单，已支付的不允许覆盖
+                .in(PayOrder::getStatus, PayStatus.NOT_COMMIT.getValue(), PayStatus.WAIT_BUYER_PAY.getValue())
+                .set(PayOrder::getStatus, PayStatus.TRADE_CLOSED.getValue())
+                .update();
+        log.info("关闭支付单，业务订单号：{}，结果：{}", bizOrderNo, closed ? "成功" : "未变更（不存在或已非未支付状态）");
     }
 }

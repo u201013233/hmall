@@ -14,6 +14,11 @@ public class PayClientFallback implements FallbackFactory<PayClient> {
             public PayOrderDTO queryPayOrderByBizOrderNo(Long id) {
                 return null;
             }
+
+            @Override
+            public void closePayOrderByBizOrderNo(Long id) {
+                log.debug("关闭支付单失败，走fallback：业务订单id={}", id);
+            }
         };
     }
 }
