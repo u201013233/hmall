@@ -25,6 +25,8 @@ import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
@@ -32,6 +34,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -59,6 +62,15 @@ public class SearchServiceImpl implements ISearchService {
      * 默认排序字段
      */
     private static final String DEFAULT_SORT_FIELD = "updateTime";
+    /**
+     * 过滤项字段
+     */
+    private static final String FILTER_CATEGORY = "category";
+    private static final String FILTER_BRAND = "brand";
+    /**
+     * 聚合返回的最大数量
+     */
+    private static final int AGG_SIZE = 20;
 
     private final RestHighLevelClient client;
     private final ItemClient itemClient;
@@ -121,24 +133,80 @@ public class SearchServiceImpl implements ISearchService {
         }
     }
 
+    @Override
+    public Map<String, List<String>> filters(ItemPageQuery query) {
+        try {
+            Map<String, List<String>> filters = new LinkedHashMap<>(2);
+            // 统计分类时排除分类自身的过滤条件，统计品牌时排除品牌自身的过滤条件，
+            // 否则用户选中一个分类后，分类过滤项就只剩下它自己了
+            filters.put(FILTER_CATEGORY, aggregateValues(query, FILTER_CATEGORY));
+            filters.put(FILTER_BRAND, aggregateValues(query, FILTER_BRAND));
+            return filters;
+        } catch (IOException e) {
+            throw new BizIllegalException("查询过滤项失败", e);
+        }
+    }
+
+    /**
+     * 对指定字段做terms聚合，返回聚合结果中的key列表
+     */
+    private List<String> aggregateValues(ItemPageQuery query, String field) throws IOException {
+        // 1.创建Request
+        SearchRequest request = new SearchRequest(ITEM_INDEX_NAME);
+        String aggName = field + "_agg";
+        // 2.组织请求参数：只查聚合不查文档，聚合条件是搜索条件（排除该字段自身的过滤条件）
+        request.source(new SearchSourceBuilder()
+                .query(buildQuery(query, field))
+                .size(0)
+                .aggregation(AggregationBuilders.terms(aggName).field(field).size(AGG_SIZE)));
+        // 3.发送请求
+        SearchResponse response = client.search(request, RequestOptions.DEFAULT);
+        // 4.解析聚合结果
+        Terms terms = response.getAggregations().get(aggName);
+        List<String> values = new ArrayList<>(terms.getBuckets().size());
+        for (Terms.Bucket bucket : terms.getBuckets()) {
+            values.add(bucket.getKeyAsString());
+        }
+        return values;
+    }
+
     /**
      * 构建ES查询条件
      */
     private SearchSourceBuilder buildSourceBuilder(ItemPageQuery query) {
         SearchSourceBuilder source = new SearchSourceBuilder();
-        // 1.关键字：对商品名称做分词匹配
+        // 1.查询条件
+        source.query(buildQuery(query, null));
+        // 2.分页
+        source.from(query.from()).size(query.getPageSize());
+        // 3.排序
+        source.sort(SortBuilders.fieldSort(resolveSortField(query.getSortBy()))
+                .order(resolveSortOrder(query)));
+        // 4.返回精确的总条数
+        source.trackTotalHits(true);
+        return source;
+    }
+
+    /**
+     * 构建ES的bool查询条件
+     *
+     * @param excludeFilterField 需要排除的过滤字段，聚合时传入自身字段名，普通搜索传null
+     */
+    private BoolQueryBuilder buildQuery(ItemPageQuery query, String excludeFilterField) {
         BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+        // 1.关键字：对商品名称做分词匹配
         if (StrUtil.isNotBlank(query.getKey())) {
             boolQuery.must(QueryBuilders.matchQuery("name", query.getKey()));
         }
-        // 2.过滤条件：分类、品牌
-        if (StrUtil.isNotBlank(query.getCategory())) {
-            boolQuery.filter(QueryBuilders.termQuery("category", query.getCategory()));
+        // 2.过滤条件：分类
+        if (StrUtil.isNotBlank(query.getCategory()) && !FILTER_CATEGORY.equals(excludeFilterField)) {
+            boolQuery.filter(QueryBuilders.termQuery(FILTER_CATEGORY, query.getCategory()));
         }
-        if (StrUtil.isNotBlank(query.getBrand())) {
-            boolQuery.filter(QueryBuilders.termQuery("brand", query.getBrand()));
+        // 3.过滤条件：品牌
+        if (StrUtil.isNotBlank(query.getBrand()) && !FILTER_BRAND.equals(excludeFilterField)) {
+            boolQuery.filter(QueryBuilders.termQuery(FILTER_BRAND, query.getBrand()));
         }
-        // 3.过滤条件：价格区间
+        // 4.过滤条件：价格区间
         if (query.getMinPrice() != null || query.getMaxPrice() != null) {
             RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("price");
             if (query.getMinPrice() != null) {
@@ -149,15 +217,7 @@ public class SearchServiceImpl implements ISearchService {
             }
             boolQuery.filter(rangeQuery);
         }
-        source.query(boolQuery);
-        // 4.分页
-        source.from(query.from()).size(query.getPageSize());
-        // 5.排序
-        source.sort(SortBuilders.fieldSort(resolveSortField(query.getSortBy()))
-                .order(resolveSortOrder(query)));
-        // 6.返回精确的总条数
-        source.trackTotalHits(true);
-        return source;
+        return boolQuery;
     }
 
     /**

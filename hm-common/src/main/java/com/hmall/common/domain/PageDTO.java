@@ -17,8 +17,14 @@ import java.util.stream.Collectors;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PageDTO<T> {
-    protected Long total;
-    protected Long pages;
+    /*
+     * total/pages 必须使用基本类型 long：
+     * JsonConfig 会把 Long 序列化成字符串（避免雪花id精度丢失），
+     * 而前端会用 total 做算术运算（total + pageSize - 1），
+     * 字符串参与运算会变成拼接，导致算出的总页数错误。
+     */
+    protected long total;
+    protected long pages;
     protected List<T> list;
 
     public static <T> PageDTO<T> empty(Long total, Long pages) {
