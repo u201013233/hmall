@@ -4,6 +4,8 @@ import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 @Data
 @ApiModel(description = "商品实体")
 public class ItemDTO {
@@ -31,4 +33,6 @@ public class ItemDTO {
     private Boolean isAD;
     @ApiModelProperty("商品状态 1-正常，2-下架，3-删除")
     private Integer status;
+    @ApiModelProperty("更新时间")
+    private LocalDateTime updateTime;
 }

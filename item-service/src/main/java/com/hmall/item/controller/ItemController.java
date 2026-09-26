@@ -1,19 +1,19 @@
 package com.hmall.item.controller;
 
 
-import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hmall.common.domain.PageDTO;
 import com.hmall.common.domain.PageQuery;
 import com.hmall.common.utils.BeanUtils;
+import com.hmall.item.constants.MQConstants;
 import com.hmall.item.domain.dto.ItemDTO;
 import com.hmall.item.domain.dto.OrderDetailDTO;
 import com.hmall.item.domain.po.Item;
-import com.hmall.item.domain.query.ItemPageQuery;
 import com.hmall.item.service.IItemService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,6 +25,7 @@ import java.util.List;
 public class ItemController {
 
     private final IItemService itemService;
+    private final RabbitTemplate rabbitTemplate;
 
     @ApiOperation("分页查询商品")
     @GetMapping("/page")
@@ -51,7 +52,10 @@ public class ItemController {
     @PostMapping
     public void saveItem(@RequestBody ItemDTO item) {
         // 新增
-        itemService.save(BeanUtils.copyBean(item, Item.class));
+        Item entity = BeanUtils.copyBean(item, Item.class);
+        itemService.save(entity);
+        // 通知搜索服务更新索引库
+        sendItemMessage(MQConstants.ITEM_INSERT_KEY, entity.getId());
     }
 
     @ApiOperation("更新商品状态")
@@ -61,6 +65,8 @@ public class ItemController {
         item.setId(id);
         item.setStatus(status);
         itemService.updateById(item);
+        // 通知搜索服务更新索引库（商品下架后会被移出索引库）
+        sendItemMessage(MQConstants.ITEM_UPDATE_KEY, id);
     }
 
     @ApiOperation("更新商品")
@@ -70,26 +76,16 @@ public class ItemController {
         item.setStatus(null);
         // 更新
         itemService.updateById(BeanUtils.copyBean(item, Item.class));
+        // 通知搜索服务更新索引库
+        sendItemMessage(MQConstants.ITEM_UPDATE_KEY, item.getId());
     }
 
     @ApiOperation("根据id删除商品")
     @DeleteMapping("{id}")
     public void deleteItemById(@PathVariable("id") Long id) {
         itemService.removeById(id);
-    }
-
-    @ApiOperation("搜索商品")
-    @GetMapping("/search")
-    public PageDTO<ItemDTO> searchItems(ItemPageQuery query) {
-        // 分页查询
-        Page<Item> result = itemService.lambdaQuery()
-                .like(StrUtil.isNotBlank(query.getKey()), Item::getName, query.getKey())
-                .eq(StrUtil.isNotBlank(query.getBrand()), Item::getBrand, query.getBrand())
-                .eq(StrUtil.isNotBlank(query.getCategory()), Item::getCategory, query.getCategory())
-                .eq(Item::getStatus, 1)
-                .between(query.getMaxPrice() != null, Item::getPrice, query.getMinPrice(), query.getMaxPrice())
-                .page(query.toMpPage("update_time", false));
-        return PageDTO.of(result, ItemDTO.class);
+        // 通知搜索服务删除索引库中的文档
+        sendItemMessage(MQConstants.ITEM_DELETE_KEY, id);
     }
 
     @ApiOperation("批量扣减库存")
@@ -102,5 +98,18 @@ public class ItemController {
     @PutMapping("/stock/restore")
     public void restoreStock(@RequestBody List<OrderDetailDTO> items){
         itemService.restoreStock(items);
+    }
+
+    /**
+     * 发送商品数据同步消息，通知搜索服务更新索引库
+     *
+     * @param routingKey 消息路由key，区分新增、修改、删除
+     * @param itemId     商品id
+     */
+    private void sendItemMessage(String routingKey, Long itemId) {
+        if (itemId == null) {
+            return;
+        }
+        rabbitTemplate.convertAndSend(MQConstants.ITEM_EXCHANGE_NAME, routingKey, itemId);
     }
 }
