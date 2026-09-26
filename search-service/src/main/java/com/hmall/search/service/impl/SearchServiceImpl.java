@@ -23,6 +23,8 @@ import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.RangeQueryBuilder;
+import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
+import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.aggregations.AggregationBuilders;
@@ -71,6 +73,11 @@ public class SearchServiceImpl implements ISearchService {
      * 聚合返回的最大数量
      */
     private static final int AGG_SIZE = 20;
+    /**
+     * 广告字段与加权权重：isAD为true的商品得分乘以该权重，从而排在前面
+     */
+    private static final String FIELD_IS_AD = "isAD";
+    private static final float AD_BOOST = 10f;
 
     private final RestHighLevelClient client;
     private final ItemClient itemClient;
@@ -175,16 +182,47 @@ public class SearchServiceImpl implements ISearchService {
      */
     private SearchSourceBuilder buildSourceBuilder(ItemPageQuery query) {
         SearchSourceBuilder source = new SearchSourceBuilder();
-        // 1.查询条件
-        source.query(buildQuery(query, null));
+        // 1.查询条件：普通查询条件 + 算分函数（广告商品加权）
+        source.query(buildFunctionScoreQuery(query));
         // 2.分页
         source.from(query.from()).size(query.getPageSize());
         // 3.排序
-        source.sort(SortBuilders.fieldSort(resolveSortField(query.getSortBy()))
-                .order(resolveSortOrder(query)));
+        applySort(source, query);
         // 4.返回精确的总条数
         source.trackTotalHits(true);
         return source;
+    }
+
+    /**
+     * 构建算分函数查询：isAD为true的广告商品得分乘上权重，从而排到最前面
+     */
+    private FunctionScoreQueryBuilder buildFunctionScoreQuery(ItemPageQuery query) {
+        return QueryBuilders.functionScoreQuery(
+                buildQuery(query, null),
+                new FunctionScoreQueryBuilder.FilterFunctionBuilder[]{
+                        new FunctionScoreQueryBuilder.FilterFunctionBuilder(
+                                // 过滤条件：广告商品
+                                QueryBuilders.termQuery(FIELD_IS_AD, true),
+                                // 算分函数：权重
+                                ScoreFunctionBuilders.weightFactorFunction(AD_BOOST))
+                });
+    }
+
+    /**
+     * 设置排序条件。
+     * 前端指定了排序字段时按字段排序；未指定时按相关性算分排序，
+     * 这样function_score给广告商品加的分才能体现出来（竞价排名）。
+     */
+    private void applySort(SearchSourceBuilder source, ItemPageQuery query) {
+        if (StrUtil.isNotBlank(query.getSortBy())) {
+            source.sort(SortBuilders.fieldSort(resolveSortField(query.getSortBy()))
+                    .order(resolveSortOrder(query)));
+            return;
+        }
+        // 默认排序：按相关性算分倒序，广告商品得分高会排在前面
+        source.sort(SortBuilders.scoreSort().order(SortOrder.DESC));
+        // 分数相同时按更新时间倒序，保证分页结果稳定
+        source.sort(SortBuilders.fieldSort(DEFAULT_SORT_FIELD).order(SortOrder.DESC));
     }
 
     /**
