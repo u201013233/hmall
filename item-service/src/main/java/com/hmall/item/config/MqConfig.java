@@ -1,6 +1,6 @@
 package com.hmall.item.config;
 
-import com.hmall.item.constants.MQConstants;
+import com.hmall.common.constants.MQConstants;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;

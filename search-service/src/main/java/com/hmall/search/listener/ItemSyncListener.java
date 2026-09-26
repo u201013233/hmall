@@ -1,6 +1,6 @@
 package com.hmall.search.listener;
 
-import com.hmall.search.constants.MQConstants;
+import com.hmall.common.constants.MQConstants;
 import com.hmall.search.service.ISearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

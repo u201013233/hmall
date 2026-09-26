@@ -1,7 +1,9 @@
-package com.hmall.search.constants;
+package com.hmall.common.constants;
 
 /**
- * 搜索服务消息队列常量，需与商品服务保持一致
+ * 消息队列常量。
+ * 交换机、队列、routingKey 是生产端与消费端之间的契约，
+ * 统一定义在公共模块里，避免两边各写一份导致改动不同步。
  */
 public interface MQConstants {
     /**
