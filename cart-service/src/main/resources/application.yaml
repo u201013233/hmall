@@ -1,5 +1,10 @@
 server:
   port: 8082
+  tomcat:
+    threads:
+      max: 50 # 允许的最大线程数（为演示线程隔离刻意调小，不做测试时可去掉这一段）
+    accept-count: 50 # 最大排队等待数量
+    max-connections: 100 # 允许的最大连接
 spring:
   application:
     name: cart-service
@@ -13,6 +18,13 @@ spring:
   cloud:
     nacos:
       server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8090 # Sentinel 控制台地址
+        # 不配 port 时默认 8719，但控制台自己就占着 8719，所以微服务会自动顺延（cart-service 通常落在 8720）
+      http-method-specify: true # 簇点资源名带上请求方式前缀，如 GET:/carts
+      log:
+        dir: logs/sentinel # 默认写在用户目录下，容易出现 AccessDeniedException，这里指到项目目录
 mybatis-plus:
   configuration:
     default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
@@ -45,3 +57,5 @@ knife4j:
 feign:
   okhttp:
     enabled: true
+  sentinel:
+    enabled: true # 开启 Feign 对 Sentinel 的支持，FeignClient 会变成簇点资源

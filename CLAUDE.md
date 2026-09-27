@@ -58,6 +58,45 @@ RabbitMQ 管理台：http://localhost:15672（hmall/123）。
 
 交换机 / 队列 / 绑定由 `@RabbitListener` 在启动时自动声明，无需手动建 MQ。
 
+## 服务保护（Sentinel）
+
+已在本仓库实现（day05 的「服务保护」部分，**分布式事务/Seata 尚未实现**）。
+
+- **接入模块**：`cart-service`（购物车，含 Tomcat 线程数调小，便于演示线程隔离）、`trade-service`、`pay-service`。三者都有 `spring-cloud-starter-alibaba-sentinel` 依赖，并在 `application.yaml` 中配置了控制台地址 `localhost:8090`、`http-method-specify: true`（簇点资源名带请求方式前缀，如 `GET:/carts`）、`sentinel.log.dir: logs/sentinel`。
+- **Feign 整合**：三个服务都开了 `feign.sentinel.enabled: true`，FeignClient 会作为簇点资源出现（如 `GET:http://item-service/items`）。
+- **降级逻辑**：`hm-api` 中 `ItemClientFallback`（新建）与 `PayClientFallback` 实现 `FallbackFactory`，都在 `DefaultFeignConfig` 里注册成 Bean，并通过 `@FeignClient(fallbackFactory = ...)` 挂到客户端上。
+  - `ItemClient.queryItemByIds` 降级返回空集合 —— 购物车列表仍能正常展示，只是没有最新商品信息（`CartServiceImpl.handleCartItems` 已经处理了空集合）。
+  - `deductStock` / `restoreStock` 这类**写操作不降级**，降级方法直接抛 `BizIllegalException`，避免「库存没扣但订单成功」的脏数据。
+- **启动 Sentinel 控制台**：需要一个 sentinel-dashboard（1.8.x）jar，命令见课件，端口 8090；控制台不在线时服务也能正常启动，只是看不到簇点链路、配不了规则。
+- **限流/线程隔离/熔断规则**都在控制台上配置：簇点链路 → 流控（QPS / 并发线程数）→ 熔断（慢调用比例）。
+
+### 已实测的三条规则（2026-09-26）
+
+控制台 jar 在课件资料里（`sentinel-dashboard-1.8.6.jar`），启动命令：
+
+```bash
+java -Dserver.port=8090 -Dcsp.sentinel.dashboard.server=localhost:8090 -Dproject.name=sentinel-dashboard -jar sentinel-dashboard-1.8.6.jar
+```
+
+实测结论（cart-service 的簇点资源名就是 `GET:/carts` 和 `GET:http://item-service/items`）：
+
+| 规则 | 配置 | 实测结果 |
+| --- | --- | --- |
+| 请求限流 | `GET:/carts`，QPS 阈值 6 | 每秒 30 请求压测：60 个请求 18 个通过、42 个被拒（HTTP 429） |
+| 线程隔离 | `GET:http://item-service/items`，并发线程数 5 | 400 并发压测：全部 200，其中 259 个走了降级（商品信息为空），没有一个 500 |
+| 服务熔断 | 同上资源，异常比例 > 0.5，时长 20s | 停掉 item-service 后连续请求 14 次：5 次通过（记异常）+ 9 次被熔断直接拒绝，接口仍返回 200 且商品信息降级 |
+
+规则默认只存在内存里，重启服务即失效，所以上面这些规则我在验证完后已经清空。
+
+### Sentinel 踩坑
+
+- **降级工厂必须是 Bean**：开启 `feign.sentinel.enabled` 后，Feign 会按类型从容器里找 `fallbackFactory` 的实例，找不到就报 `No fallbackFactory instance of type class ... found`。本仓库统一放在 `hm-api` 的 `DefaultFeignConfig` 里注册，所以**每个用 Feign 的服务都必须在 `@EnableFeignClients` 上写 `defaultConfiguration = DefaultFeignConfig.class`**（`cart-service` 原来没写，本次已补上）。
+- **Sentinel 日志目录**：默认写在用户目录下，容易报 `AccessDeniedException logs\csp\sentinel-record.log`，本项目统一指到 `logs/sentinel`。
+- **限流规则不持久化**：控制台里配的规则存在内存里，服务重启就没了；要持久化得接 Nacos 等数据源（本仓库暂未接）。
+- **客户端端口**：控制台自己也注册成一个 Sentinel 客户端并占用 8719，所以同一台机器上的微服务会自动顺延（cart-service 在 8720）。用客户端命令接口（`/setRules`、`/getRules`）时要先确认端口。
+- **JDK 版本**：命令行直接 `java -cp ...` 启动服务时用 JDK 17 会在 MyBatis-Plus 的 lambda 查询上抛 `InaccessibleObjectException: java.base/java.lang.invoke`（本项目按 Java 11 编译）；用 IDEA 里的 JDK 11（`~/Library/Java/JavaVirtualMachines/ms-11.0.31`）启动即可，或在 JDK 17 上加 `--add-opens java.base/java.lang.invoke=ALL-UNNAMED`。
+- **改了 `hm-common` / `hm-api` 之后要重新 install**：其它模块单独编译或运行时（不带 `-am`）走的是本地仓库里的 jar，不重装就会「找不到类」，用 `mvn -pl hm-common,hm-api -am install -DskipTests` 更新。
+
 ## 踩坑记录
 
 - **日志**：MyBatis-Plus 的 `ServiceImpl` 自带一个 `log` 字段，类型是 `org.apache.ibatis.logging.Log`，只支持 `error(String)` / `error(String, Throwable)`，**不支持 SLF4J 的 `{}` 占位符**。要用占位符日志就给类加 Lombok `@Slf4j`（生成的字段会遮蔽父类字段）。`PayOrderServiceImpl` 和 `OrderServiceImpl` 已如此处理。

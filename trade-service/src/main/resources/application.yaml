@@ -13,12 +13,21 @@ spring:
   cloud:
     nacos:
       server-addr: localhost:8848
+    sentinel:
+      transport:
+        dashboard: localhost:8090 # Sentinel 控制台地址
+      http-method-specify: true # 簇点资源名带上请求方式前缀，如 POST:/orders
+      log:
+        dir: logs/sentinel # 默认写在用户目录下，容易出现 AccessDeniedException，这里指到项目目录
   rabbitmq:
     host: localhost
     port: 5672
     virtual-host: /hmall
     username: hmall
     password: 123
+feign:
+  sentinel:
+    enabled: true # 开启 Feign 对 Sentinel 的支持，FeignClient 会变成簇点资源
 mybatis-plus:
   configuration:
     default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
